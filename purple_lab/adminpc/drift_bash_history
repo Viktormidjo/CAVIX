@@ -1,0 +1,3 @@
+smbclient //172.22.0.10/Public -U user%UserPass123 -c ls
+smbclient //172.22.0.10/Sensitive -U admin%AdminPass123 -c ls
+ssh drift@172.22.0.20

@@ -1,0 +1,3 @@
+2024-11-12:
+- Restartet backend-tjeneste etter heng
+- Oppdatert firewall-regler for VLAN 21

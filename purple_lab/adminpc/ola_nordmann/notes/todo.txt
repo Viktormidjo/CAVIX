@@ -1,0 +1,3 @@
+- Sjekke backup-jobben
+- Oppdatere dokumentasjon for nettverkskart
+- Følge opp sak #482 om treg SMB-tilkobling

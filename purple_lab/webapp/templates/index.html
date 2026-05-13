@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Bedriften AS{% endblock %}
+
+{% block content %}
+    <h2>Velkommen til Bedriften AS</h2>
+    <p>Vi leverer moderne løsninger for en digital fremtid.</p>
+
+    <h2>Kundeuttalelser</h2>
+    <div class="comments">
+        {% for comment in comments %}
+            <div class="comment-box">{{ comment }}</div>
+        {% endfor %}
+    </div>
+
+    {% if img_b64 %}
+        <div style="text-align:center; margin-top:30px">
+            <img src="data:image/png;base64,{{ img_b64 }}" width="300" style="border-radius:10px">
+        </div>
+    {% endif %}
+{% endblock %}

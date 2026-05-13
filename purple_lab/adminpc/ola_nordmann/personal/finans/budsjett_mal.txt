@@ -1,0 +1,10 @@
+Inntekter:
+- lønn:
+- annet:
+
+Utgifter:
+- husleie:
+- strøm:
+- mat:
+- transport:
+- diverse:

@@ -1,0 +1,27 @@
+IT-retningslinjer for Bedriften AS
+====================================
+Versjon: 2.1 | Sist oppdatert: Januar 2024
+
+1. PASSORD
+   - Alle passord skal være minimum 8 tegn
+   - Passord skal endres hvert 90. dag
+   - Ikke del passord med kollegaer
+
+2. NETTVERKSBRUK
+   - Kun godkjente enheter skal kobles til bedriftens nett
+   - VPN skal benyttes ved ekstern tilgang
+
+3. FILSERVER
+   - Public-share er åpen for alle ansatte (guest ok)
+   - Sensitive dokumenter: kontakt IT-drift for tilgang
+   - Standardpassord for nye ansatte: Bedriften1!
+     (HUSK å endre dette ved første innlogging)
+
+4. ADMINISTRASJON
+   - Drifts-PC (172.21.0.40) benyttes til systemadministrasjon
+   - SSH-tilgang via drift-brukerkontoen
+   - Filserver-administrasjon: se /opt/scripts/ på drifts-PC
+
+5. KONTAKT
+   - IT-support: it@bedriften.no
+   - Driftsansvarlig: Ola Nordmann (ola.nordmann@bedriften.no)

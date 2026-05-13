@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Bedriften AS{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header>
+        <h1>Bedriften AS</h1>
+        <nav>
+            <a href="/">Hjem</a>
+            <a href="/info">Info</a>
+            <a href="/teamet">Teamet</a>
+            <a href="/kontakt">Kontakt</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer>© 2026 Bedriften AS</footer>
+</body>
+</html>

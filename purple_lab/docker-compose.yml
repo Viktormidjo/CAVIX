@@ -1,0 +1,222 @@
+version: "3.9"
+
+services:
+
+  # Angriper-node (kun tilgang til frontend)
+  attacker:
+    build: ./attacker
+    container_name: attacker
+    hostname: attacker
+    cap_add:                      # Tillater scanning (nmap, scapy)
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined        # Fjerner begrensninger som blokkerer offensive verktøy
+    networks:
+      frontend:
+        ipv4_address: 172.20.0.50
+
+
+  # Reverse-proxy i DMZ – eneste eksponerte tjeneste
+  reverse-proxy:
+    build: ./reverse-proxy
+    container_name: reverse-proxy
+    hostname: reverse-proxy
+    ports:
+      - "8080:80"   # HTTP tilgjengelig for angriper
+      - "2222:22"   # SSH for administrasjon/backup
+    depends_on:
+      - webapp
+    networks:
+      frontend:
+        ipv4_address: 172.20.0.10
+      backend:
+        ipv4_address: 172.21.0.10
+
+
+  # Webapp i backend – kun tilgjengelig via reverse-proxy
+  webapp:
+    build: ./webapp
+    container_name: webapp
+    hostname: webapp
+    environment:
+      - DB_HOST=172.21.0.30
+      - DB_USER=appuser
+      - DB_PASS=supersecret
+      - DB_NAME=appdb
+    depends_on:
+      - db
+    networks:
+      backend:
+        ipv4_address: 172.21.0.20
+
+
+
+  # Database – isolert i backend-nettet
+  db:
+    image: postgres:16
+    container_name: db
+    hostname: db
+    environment:
+      - POSTGRES_PASSWORD=supersecret
+      - POSTGRES_USER=appuser
+      - POSTGRES_DB=appdb
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+    networks:
+      backend:
+        ipv4_address: 172.21.0.30
+
+
+  # Admin-PC – har tilgang til alle interne soner
+  adminpc:
+    build: ./adminpc
+    container_name: adminpc
+    hostname: adminpc
+    networks:
+      backend:
+        ipv4_address: 172.21.0.40
+      internal:
+        ipv4_address: 172.22.0.20
+      backup-net:
+        ipv4_address: 172.23.0.20
+
+
+
+  # Bruker-PC – kun i internal-nettet
+  brukerpc:
+    build: ./brukerpc
+    container_name: brukerpc-1
+    hostname: brukerpc-1
+    networks:
+      internal:
+        ipv4_address: 172.22.0.30
+
+
+  # Filserver (Samba) – tilgjengelig for brukere og admin
+  filserver:
+    build: ./samba
+    container_name: filserver
+    hostname: filserver
+    restart: unless-stopped
+    networks:
+      internal:
+        ipv4_address: 172.22.0.10
+    volumes:
+      - ./filserver/public:/mount/public:ro
+      - ./filserver/sensitive:/mount/sensitive:ro
+
+
+
+  # Backupserver – mottar SSH-backups fra adminpc
+  backupserver:
+    build: ./backupServer
+    container_name: backupserver
+    hostname: backupserver
+    networks:
+      backup-net:
+        ipv4_address: 172.23.0.67
+    ports:
+      - "2223:22"
+
+
+  # MongoDB – Graylog metadata (brukere, dashboards, streams)
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    hostname: mongo
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+      - ./mongo-init/graylog.dump:/graylog.dump:ro
+    networks:
+      log-net:
+        ipv4_address: 172.30.0.12
+
+
+  # OpenSearch – Graylog sin indeksmotor
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: opensearch
+    hostname: opensearch
+    environment:
+      - discovery.type=single-node                    # Kjør OpenSearch uten cluster
+      - plugins.security.disabled=true                # Forenkler lab-oppsett - Slår av avansert sikkerhet så OpenSearch starter uten ekstra oppsett
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"      # Setter min/max RAM for Java Virtual Machine
+    ulimits:
+      memlock:
+        soft: -1    # Tillater OpenSearch å låse minne (hindrer swapping)
+        hard: -1    # Påkrevd for stabil ytelse i single-node
+    restart: always
+    volumes:
+      - os_data:/usr/share/opensearch/data
+    networks:
+      log-net:
+        ipv4_address: 172.30.0.11
+
+
+
+  # Graylog – sentral loggserver, tilgjengelig i alle nett
+  graylog:
+    build: ./graylog
+    container_name: graylog
+    hostname: graylog
+    depends_on:
+      - mongo
+      - opensearch
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=superhemmeligpassord123
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://172.30.0.1:9000/            # URL Graylog annonserer til klienter
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://172.30.0.11:9200          # OpenSearch-endepunktet Graylog bruker
+      - GRAYLOG_MONGODB_URI=mongodb://172.30.0.12:27017/graylog      # MongoDB-URI for Graylog metadata
+    ports:
+      - "9000:9000"     # Web UI
+      - "6514:6514/tcp" # Syslog TCP input
+    restart: always
+    networks:
+      log-net:
+        ipv4_address: 172.30.0.10
+      backend:
+        ipv4_address: 172.21.0.100
+      internal:
+        ipv4_address: 172.22.0.100
+      backup-net:
+        ipv4_address: 172.23.0.100
+
+
+# Nettverkssegmentering – simulerer bedriftsarkitektur
+networks:
+  frontend:            # Attacker + reverse-proxy
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+  backend:            # Reverse-proxy + webapp + database + adminpc
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+
+  internal:          # Bruker-PC + adminpc + filserver
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
+  backup-net:        # Backupserver + adminpc
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.23.0.0/24
+  log-net:          # Graylog + Mongo + OpenSearch
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  dbdata:         # Persistent lagring for PostgreSQL
+  mongo_data:     # Persistent lagring for MongoDB (Graylog config)
+  os_data:        # Persistent lagring for OpenSearch-indekser

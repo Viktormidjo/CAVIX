@@ -1,0 +1,7 @@
+Host proxy
+    HostName 172.20.0.10
+    User webadmin
+
+Host adminpc
+    HostName 172.22.0.20
+    User drift

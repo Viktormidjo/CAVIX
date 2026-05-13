@@ -1,0 +1,4 @@
+1. Sjekk nettverk (ping, ip a, ip r)
+2. Sjekk tjenester (systemctl status)
+3. Sjekk diskplass (df -h)
+4. Sjekk logger (/var/log)

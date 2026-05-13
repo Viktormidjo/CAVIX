@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Avslå bruk hvis ingen kommando ble sendt (hindrer shell-tilgang)
+if [[ -z "$SSH_ORIGINAL_COMMAND" ]]; then
+    echo "Interactive shell access is not permitted."
+    exit 1
+fi
+
+# Tillat kun scp-opplastninger til /data
+case "$SSH_ORIGINAL_COMMAND" in
+    scp\ -t\ /data*)
+        exec $SSH_ORIGINAL_COMMAND
+        ;;
+    *)
+        echo "Command not permitted: $SSH_ORIGINAL_COMMAND"
+        exit 1
+        ;;
+esac
