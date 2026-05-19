@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e		# Stopp skriptet hvis en kommando feiler
 
+# Rute til internal-nettet via router
+ip route add 172.22.0.0/24 via 172.21.0.254 || true
+ip route add 172.23.0.0/24 via 172.21.0.254 || true
+
 # Aktiver passordinnlogging for SSH
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 

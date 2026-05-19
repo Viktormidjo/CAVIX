@@ -7,6 +7,8 @@ services:
     build: ./attacker
     container_name: attacker
     hostname: attacker
+    extra_hosts:
+      - "bedriften.no:172.20.0.254"
     cap_add:                      # Tillater scanning (nmap, scapy)
       - NET_RAW
     security_opt:
@@ -27,8 +29,6 @@ services:
     depends_on:
       - webapp
     networks:
-      frontend:
-        ipv4_address: 172.20.0.10
       backend:
         ipv4_address: 172.21.0.10
 
@@ -68,18 +68,53 @@ services:
         ipv4_address: 172.21.0.30
 
 
-  # Admin-PC – har tilgang til alle interne soner
-  adminpc:
-    build: ./adminpc
-    container_name: adminpc
-    hostname: adminpc
+# Ruter som "beskytter" bedriften fra utsiden
+  edge-router:
+    build: ./edge-router
+    container_name: edge-router
+    hostname: edge-router
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      frontend:
+        ipv4_address: 172.20.0.254
+      backend:
+        ipv4_address: 172.21.0.253
+
+
+# Ruter som skiller interne soner
+  router:
+    build: ./router
+    container_name: router
+    hostname: router
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      backend:
+        ipv4_address: 172.21.0.254
+      internal:
+        ipv4_address: 172.22.0.254
+      backup-net:
+        ipv4_address: 172.23.0.254
+      log-net:
+        ipv4_address: 172.30.0.254
+
+
+
+  # drift-PC – drifter backup-prosessen og webtjenestens servere
+  drift-pc:
+    build: ./drift-pc
+    container_name: drift-pc
+    hostname: drift-pc
+    cap_add:
+      - NET_ADMIN
     networks:
       backend:
         ipv4_address: 172.21.0.40
-      internal:
-        ipv4_address: 172.22.0.20
-      backup-net:
-        ipv4_address: 172.23.0.20
 
 
 
@@ -108,7 +143,7 @@ services:
 
 
 
-  # Backupserver – mottar SSH-backups fra adminpc
+  # Backupserver – mottar SSH-backups fra drift-pc
   backupserver:
     build: ./backupServer
     container_name: backupserver
@@ -157,7 +192,7 @@ services:
 
 
 
-  # Graylog – sentral loggserver, tilgjengelig i alle nett
+  # Graylog – sentral loggserver
   graylog:
     build: ./graylog
     container_name: graylog
@@ -178,39 +213,33 @@ services:
     networks:
       log-net:
         ipv4_address: 172.30.0.10
-      backend:
-        ipv4_address: 172.21.0.100
-      internal:
-        ipv4_address: 172.22.0.100
-      backup-net:
-        ipv4_address: 172.23.0.100
 
 
 # Nettverkssegmentering – simulerer bedriftsarkitektur
 networks:
-  frontend:            # Attacker + reverse-proxy
+  frontend:            # Attacker + edge-router
     driver: bridge
     ipam:
       config:
         - subnet: 172.20.0.0/24
 
-  backend:            # Reverse-proxy + webapp + database + adminpc
+  backend:            # Reverse-proxy + webapp + database + drift-pc + edge-router + router
     driver: bridge
     ipam:
       config:
         - subnet: 172.21.0.0/24
 
-  internal:          # Bruker-PC + adminpc + filserver
+  internal:          # Bruker-PC + filserver + router
     driver: bridge
     ipam:
       config:
         - subnet: 172.22.0.0/24
-  backup-net:        # Backupserver + adminpc
+  backup-net:        # Backupserver + drift-pc + router
     driver: bridge
     ipam:
       config:
         - subnet: 172.23.0.0/24
-  log-net:          # Graylog + Mongo + OpenSearch
+  log-net:          # Graylog + Mongo + OpenSearch + router
     driver: bridge
     ipam:
       config:
