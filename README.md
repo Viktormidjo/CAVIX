@@ -137,7 +137,7 @@ log-net (172.30.0.0/24)
 
 ```bash
 git clone https://github.com/Viktormidjo/CAVIX.git
-cd CAVIX-main/
+cd /CAVIX
 
 # Bygge nødvendig Docker miljø
 chmod +x ./setup_vm.sh
