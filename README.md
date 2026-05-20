@@ -148,6 +148,7 @@ sudo usermod -aG docker $USER
 newgrp docker
 
 # Start alle containere
+cd /purple_lab
 docker compose up -d --build
 
 # Verifiser at alle kjører
