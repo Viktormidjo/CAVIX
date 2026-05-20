@@ -143,10 +143,6 @@ cd /CAVIX
 chmod +x ./setup_vm.sh
 ./setup_vm.sh
 
-# Legg til brukeren i docker-gruppen og aktiver endringene uten å logge ut:
-sudo usermod -aG docker $USER
-newgrp docker
-
 # Start alle containere
 cd /purple_lab
 docker compose up -d --build
