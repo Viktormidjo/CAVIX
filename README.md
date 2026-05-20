@@ -136,9 +136,16 @@ log-net (172.30.0.0/24)
 ## Oppsett
 
 ```bash
-# Pakk ut labben
-unzip CAVIX-test-viktor.zip
-cd CAVIX-test-viktor/purple_lab
+git clone https://github.com/Viktormidjo/CAVIX.git
+cd CAVIX-main/
+
+# Bygge nødvendig Docker miljø
+chmod +x ./setup_vm.sh
+./setup_vm.sh
+
+# Legg til brukeren i docker-gruppen og aktiver endringene uten å logge ut:
+sudo usermod -aG docker $USER
+newgrp docker
 
 # Start alle containere
 docker compose up -d --build
@@ -148,6 +155,11 @@ docker compose ps
 
 # Koble til attacker-containeren
 docker exec -it attacker bash
+
+# Starte attackscript
+cd workspace
+./angrep.sh
+
 ```
 
 > **Merk:** Alle verktøy (nmap, hydra, smbclient, sshpass, nc) og ordlister
